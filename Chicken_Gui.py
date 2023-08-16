@@ -207,52 +207,149 @@ def show_remove_white_window():
     window2.close()
 
 def calculate_white_percent(image, thresh):
-    # Convert to grayscale
     gray_img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Apply threshold
     _, mask = cv2.threshold(gray_img, 0, 255, thresh)
-
-    # Count white pixels
     white_pixels = np.sum(mask == 0)
-    # Count total pixels
     total_pixels = np.prod(mask.shape)
-    # Calculate percentage
     percent = (white_pixels / total_pixels) * 100
     return percent
 
-def show_chicken_size_window():
+def save_results_to_txt(results, save_path):
+    with open(save_path, "w") as f:
+        for key, value in results.items():
+            f.write(f"{key}: {value:.2f}%\n")
+
+def calculate_chicken_size_window():
     layout = [
-        [sg.Text("이미지를 선택하세요.")],
-        [sg.Input(key="-IMAGE_PATH-"), sg.FileBrowse(file_types=(("PNG Files", "*.png"),))],
-        [sg.Button("크기 계산"), sg.Text("thresh 경계값 (입력하지 않으면 기본값 = 9):"), sg.Input(key="-thresh-", size=(5, 1))]
+        [sg.Text("닭 크기 설정")],
+        [sg.Text("1/4:"), sg.Input(key="-FOLDER_PATH1-"), sg.FolderBrowse()],
+        [sg.Text("2/4:"), sg.Input(key="-FOLDER_PATH2-"), sg.FolderBrowse()],
+        [sg.Text("3/4:"), sg.Input(key="-FOLDER_PATH3-"), sg.FolderBrowse()],
+        [sg.Text("4/4:"), sg.Input(key="-FOLDER_PATH4-"), sg.FolderBrowse()],
+        [sg.Button("닭 크기 저장")]
     ]
 
-    window = sg.Window("닭 크기 찾기", layout)
+    window = sg.Window("닭 크기 설정", layout)
+
+    results = {}  # Dictionary to store results
 
     while True:
         event, values = window.read()
-        if event == "크기 계산":
-            # Read image
-            image = cv2.imread(values["-IMAGE_PATH-"])
-            # Calculate percentage
-            thresh = 9 if not values["-thresh-"] else int(values["-thresh-"])
-            percent = calculate_white_percent(image, thresh)
-            # Display percentage
-            sg.popup(f"흰색 픽셀의 비율: {percent:.2f}%")
-        elif event == sg.WIN_CLOSED:
+
+        if event == sg.WIN_CLOSED:
+            break
+        elif event == "닭 크기 저장":
+            for i in range(1, 5):
+                folder_path = values[f"-FOLDER_PATH{i}-"]
+                img_files = [file for file in os.listdir(folder_path) if file.lower().endswith(".png")]
+
+                total_percent = 0
+                for img_file in img_files:
+                    img_path = os.path.join(folder_path, img_file)
+                    image = cv2.imread(img_path)
+                    percent = calculate_white_percent(image, 9)  # Using 9 as base threshold
+                    total_percent += percent
+
+                avg_percent = total_percent / len(img_files)
+                results[f"{i}/4"] = avg_percent
+
+            save_layout = [
+                [sg.Text("결과를 저장할 경로와 파일명을 선택하세요.")],
+                [sg.Input(key="-SAVE_PATH-"), sg.FileSaveAs(), sg.Button("저장")]
+            ]
+            save_window = sg.Window("닭 크기 저장", save_layout)
+
+            while True:
+                save_event, save_values = save_window.read()
+                if save_event == sg.WIN_CLOSED:
+                    break
+                elif save_event == "저장":
+                    save_name = save_values["-SAVE_PATH-"]
+                    if not save_name.lower().endswith(".txt"):
+                        save_name += ".txt"
+
+                    save_path = save_name
+                    save_results_to_txt(results, save_path)  # Save results using custom function
+                    save_window.close()
+                    sg.popup("결과가 저장되었습니다.", title="저장 완료")
+                    break  # Exit the loop after showing the popup
+
+            save_window.close()
+            window.close()
+
+    window.close()
+
+
+def calculate_chicken_size_from_file():
+    layout = [
+        [sg.Text("이미지 파일을 선택하세요:"), sg.Input(key="image_path"), sg.FileBrowse(file_types=(("Image Files", "*.png"),)), sg.Button("확인")]
+    ]
+
+    window = sg.Window("이미지 선택", layout)
+
+    while True:
+        event, values = window.read()
+
+        if event == sg.WIN_CLOSED:
+            break
+        elif event == "확인":
+            image_path = values["image_path"]
+            calculate_and_show_chicken_size(image_path)
             break
 
     window.close()
+
+
+def calculate_and_show_chicken_size(image_path):
+    layout = [
+        [sg.Text("닭 크기 정보를 담고 있는 txt 파일을 선택하세요:")],
+        [sg.Input(key="txt_path"), sg.FileBrowse(file_types=(("Text Files", "*.txt"),))],
+        [sg.Button("확인")]
+    ]
+
+    window = sg.Window("txt 파일 선택", layout)
+
+    while True:
+        event, values = window.read()
+
+        if event == sg.WIN_CLOSED:
+            break
+        elif event == "확인":
+            txt_path = values["txt_path"]
+            image = cv2.imread(image_path)
+            percent = calculate_white_percent(image, 9)  # 기본 임계값 9 사용
+            size_info = find_nearest_chicken_size(percent, txt_path)
+            sg.popup(f'닭 크기는 {size_info}입니다.')
+
+
+    window.close()
+
+def find_nearest_chicken_size(percent, txt_path):
+    with open(txt_path, 'r') as f:
+        lines = f.readlines()
+
+    closest_size = None
+    min_diff = float('inf')
+
+    for line in lines:
+        size, size_percent = line.split(':')
+        size_percent = float(size_percent.strip()[:-1])  # '%' 제거 후 부동소수점으로 변환
+        diff = abs(size_percent - percent)
+
+        if diff < min_diff:
+            min_diff = diff
+            closest_size = size
+    return closest_size
 
 def create_main_window():
     sg.theme('DarkBlue')
 
     layout = [
         [sg.Text("Chicken_Gui", font=('Helvetica', 20))],
-        [sg.Button("img 추출"), sg.Button("폐사체 검출"), sg.Button("닭 크기 찾기")]
+        [sg.Button("img 추출"), sg.Button("폐사체 검출"), sg.Button("닭 크기 설정"), sg.Button("닭 크기 찾기")]
     ]
 
-    window = sg.Window("Chicken_Gui", layout, size=(300, 100))
+    window = sg.Window("Chicken_Gui", layout, size=(400, 100))
 
     while True:
         event, values = window.read()
@@ -267,9 +364,13 @@ def create_main_window():
             window.hide()
             show_remove_white_window()
             window.un_hide()
+        elif event == "닭 크기 설정":
+            window.hide()
+            calculate_chicken_size_window()
+            window.un_hide()
         elif event == "닭 크기 찾기":
             window.hide()
-            show_chicken_size_window()
+            calculate_chicken_size_from_file()
             window.un_hide()
 
     window.close()
